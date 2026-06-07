@@ -298,12 +298,9 @@ export default function Home() {
 
       const linkHrefs = new Set<string>();
 
-      const activeUrlsCount = urls.length || 1;
-      const limitPerSite = Math.max(1, Math.round(12 / activeUrlsCount));
-
       const scrapePromises = urls.map(async (url) => {
         try {
-          const promise = scrapeUrl({ url, page, limit: limitPerSite });
+          const promise = scrapeUrl({ url, page, limit: 12 });
           activePromisesRef.current.push(promise);
           const res = await promise.unwrap();
           
@@ -339,9 +336,10 @@ export default function Home() {
             h1s: dedupedH1s,
           });
 
-          setTotalPagesImages(Math.ceil(currentTotalImages / (activeUrlsCount * limitPerSite)) || 1);
-          setTotalPagesVideos(Math.ceil(currentTotalVideos / (activeUrlsCount * limitPerSite)) || 1);
-          setTotalPagesLinks(Math.ceil(currentTotalLinks / (activeUrlsCount * limitPerSite)) || 1);
+          const activeUrlsCount = urls.length || 1;
+          setTotalPagesImages(Math.ceil(currentTotalImages / (activeUrlsCount * 12)) || 1);
+          setTotalPagesVideos(Math.ceil(currentTotalVideos / (activeUrlsCount * 12)) || 1);
+          setTotalPagesLinks(Math.ceil(currentTotalLinks / (activeUrlsCount * 12)) || 1);
 
         } catch (error: any) {
           if (isCancelledRef.current) return;
