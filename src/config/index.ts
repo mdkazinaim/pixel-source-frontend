@@ -6,7 +6,7 @@ const API_PREFIX = process.env.API_PREFIX || "api/v1";
 
 // Core composition
 const API_BASE = isProd
-  ? `${APP_HOST}/${API_PREFIX}` // no port in prod (usually)
+  ? `${APP_HOST}/${APP_PORT}/${API_PREFIX}` // no port in prod (usually)
   : `${APP_HOST}:${APP_PORT}/${API_PREFIX}`;
 
 export const config = {

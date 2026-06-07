@@ -32,12 +32,6 @@ export default function MediaSkeleton() {
         <div className="absolute inset-0 bg-gradient-to-r from-transparent via-zinc-800/10 to-transparent -translate-x-full animate-[shimmer_2s_infinite]" />
         <div className="absolute bottom-4 left-4 w-40 h-4 bg-zinc-800/50 rounded" />
       </div>
-
-      {/* Block 6: Small Item */}
-      <div className="animate-pulse bg-zinc-900/40 border border-zinc-800/60 rounded-2xl h-[200px] relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-zinc-800/10 to-transparent -translate-x-full animate-[shimmer_2s_infinite]" />
-        <div className="absolute bottom-4 left-4 w-28 h-4 bg-zinc-800/50 rounded" />
-      </div>
     </div>
   );
 }

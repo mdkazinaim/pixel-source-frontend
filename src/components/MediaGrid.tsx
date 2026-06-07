@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import { Eye, ExternalLink, Check, X, ChevronLeft, ChevronRight } from "lucide-react";
+import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
+import { Eye, ExternalLink, Check, X, ChevronLeft, ChevronRight, Download } from "lucide-react";
+import { config } from "@/config";
 
 interface Props {
   items: string[];
@@ -28,7 +30,7 @@ const getUrlWidthAndBase = (urlStr: string) => {
     const params = new URLSearchParams(url.search);
     
     // Check for width parameter
-    let widthVal = params.get("w") || params.get("width");
+    const widthVal = params.get("w") || params.get("width");
     let width = widthVal ? parseInt(widthVal, 10) : null;
     
     if (!width) {
@@ -114,6 +116,7 @@ export default function MediaGrid({ items, type, selectedItems, onToggle }: Prop
   
   // Preview Modal States
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+  const [selectedSitesFilter, setSelectedSitesFilter] = useState<string[]>([]);
 
   if (items.length === 0) {
     return (
@@ -123,24 +126,88 @@ export default function MediaGrid({ items, type, selectedItems, onToggle }: Prop
     );
   }
 
+
+  const availableSites = Array.from(new Set(items.map(item => getSiteName(item)))).filter(Boolean) as string[];
+
+  const filteredItems = selectedSitesFilter.length > 0
+    ? items.filter(item => {
+        const name = getSiteName(item);
+        return name && selectedSitesFilter.includes(name);
+      })
+    : items;
+
+  const grouped = type === "image" ? groupImages(filteredItems) : [];
+
   // Handle preview index bounds
   const handlePrev = (e?: React.MouseEvent) => {
     e?.stopPropagation();
     if (previewIndex === null) return;
-    setPreviewIndex((prev) => (prev !== null && prev > 0 ? prev - 1 : items.length - 1));
+    const length = type === "image" ? grouped.length : filteredItems.length;
+    setPreviewIndex((prev) => (prev !== null && prev > 0 ? prev - 1 : length - 1));
   };
 
   const handleNext = (e?: React.MouseEvent) => {
     e?.stopPropagation();
     if (previewIndex === null) return;
-    setPreviewIndex((prev) => (prev !== null && prev < items.length - 1 ? prev + 1 : 0));
+    const length = type === "image" ? grouped.length : filteredItems.length;
+    setPreviewIndex((prev) => (prev !== null && prev < length - 1 ? prev + 1 : 0));
+  };
+
+  const handleDownloadSingle = (url: string) => {
+    const downloadUrl = `${config.API_BASE}/scraper/download-single?url=${encodeURIComponent(url)}`;
+    const a = document.createElement("a");
+    a.href = downloadUrl;
+    a.setAttribute("download", "");
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   };
 
   if (type === "image") {
-    const grouped = groupImages(items);
 
     return (
       <>
+        {availableSites.length > 1 && (
+          <div className="w-full flex flex-wrap items-center gap-2 mb-6 p-2 bg-zinc-900/10 rounded-xl border border-zinc-800/80 backdrop-blur-md">
+            <span className="text-xs text-zinc-500 font-semibold px-2">Filter Source:</span>
+            <button
+              onClick={() => setSelectedSitesFilter([])}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                selectedSitesFilter.length === 0
+                  ? "bg-blue-600 text-white shadow-md shadow-blue-500/20"
+                  : "bg-zinc-900/50 text-zinc-400 hover:text-white hover:bg-zinc-800"
+              }`}
+            >
+              All ({items.length})
+            </button>
+            {availableSites.map(site => {
+              const isActive = selectedSitesFilter.includes(site);
+              const count = items.filter(item => getSiteName(item) === site).length;
+              return (
+                <button
+                  key={site}
+                  onClick={() => {
+                    setSelectedSitesFilter(prev => 
+                      prev.includes(site)
+                        ? prev.filter(s => s !== site)
+                        : [...prev, site]
+                    );
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    isActive
+                      ? "bg-blue-600/20 text-blue-400 border border-blue-500/30"
+                      : "bg-zinc-900/50 text-zinc-400 hover:text-white hover:bg-zinc-850 border border-transparent"
+                  }`}
+                >
+                  <span>{site}</span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                    isActive ? "bg-blue-500/20 text-blue-300" : "bg-zinc-950/80 text-zinc-500"
+                  }`}>{count}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
         <div className="columns-1 md:columns-3 gap-4 space-y-4">
           {grouped.map((g, index) => {
             const currentUrl = selectedQualities[g.id] || g.selectedUrl;
@@ -220,10 +287,22 @@ export default function MediaGrid({ items, type, selectedItems, onToggle }: Prop
                       e.stopPropagation();
                       setPreviewIndex(index);
                     }}
-                    className="w-12 h-12 rounded-full bg-blue-600 hover:bg-blue-500 text-white flex items-center justify-center transition-all hover:scale-110 active:scale-95 shadow-lg"
+                    className="w-12 h-12 rounded-full bg-blue-600 hover:bg-blue-500 text-white flex items-center justify-center transition-all hover:scale-110 active:scale-95 shadow-lg cursor-pointer"
                     title="Preview Image"
                   >
                     <Eye className="w-5 h-5" />
+                  </button>
+
+                  {/* Download Button */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDownloadSingle(currentUrl);
+                    }}
+                    className="w-12 h-12 rounded-full bg-green-600 hover:bg-green-500 text-white flex items-center justify-center transition-all hover:scale-110 active:scale-95 shadow-lg cursor-pointer"
+                    title="Download Image"
+                  >
+                    <Download className="w-5 h-5" />
                   </button>
                   
                   {/* Details (ExternalLink) Button */}
@@ -244,26 +323,39 @@ export default function MediaGrid({ items, type, selectedItems, onToggle }: Prop
         </div>
 
         {/* Preview Lightbox Modal */}
-        {previewIndex !== null && (
+        {previewIndex !== null && grouped[previewIndex] && createPortal(
           <div 
-            className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex flex-col justify-between p-6 animate-fade-in"
+            className="fixed inset-0 z-[9999] bg-black/95 backdrop-blur-md flex flex-col justify-between p-6 animate-fade-in overflow-hidden h-screen max-h-screen"
             onClick={() => setPreviewIndex(null)}
           >
             {/* Modal Header */}
             <div className="w-full flex items-center justify-between z-10">
               <span className="text-sm font-semibold text-zinc-400">
-                Preview ({previewIndex + 1} of {items.length})
+                Preview ({previewIndex + 1} of {grouped.length})
               </span>
-              <button
-                onClick={() => setPreviewIndex(null)}
-                className="w-10 h-10 rounded-full bg-zinc-900 hover:bg-zinc-800 text-white flex items-center justify-center border border-zinc-850 transition-all cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => {
+                    const currentUrl = selectedQualities[grouped[previewIndex].id] || grouped[previewIndex].selectedUrl;
+                    handleDownloadSingle(currentUrl);
+                  }}
+                  className="px-4 py-2 rounded-xl bg-green-600 hover:bg-green-500 text-white flex items-center gap-2 font-semibold text-sm transition-all shadow-lg active:scale-95 cursor-pointer"
+                  title="Download Image"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Download</span>
+                </button>
+                <button
+                  onClick={() => setPreviewIndex(null)}
+                  className="w-10 h-10 rounded-full bg-zinc-900 hover:bg-zinc-800 text-white flex items-center justify-center border border-zinc-850 transition-all cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {/* Modal Main Image and Nav Buttons */}
-            <div className="flex-1 flex items-center justify-center relative my-4">
+            <div className="flex-1 min-h-0 flex items-center justify-center relative my-4 overflow-hidden">
               {/* Prev Arrow */}
               <button
                 onClick={handlePrev}
@@ -273,10 +365,11 @@ export default function MediaGrid({ items, type, selectedItems, onToggle }: Prop
               </button>
 
               <img
-                src={items[previewIndex]}
+                src={selectedQualities[grouped[previewIndex].id] || grouped[previewIndex].selectedUrl}
                 alt={`Preview active ${previewIndex}`}
                 onClick={(e) => e.stopPropagation()}
-                className="max-h-[65vh] max-w-full object-contain rounded-xl shadow-2xl border border-zinc-900 bg-zinc-950 animate-scale-up"
+                className="max-h-[65vh] max-w-full object-contain rounded-xl shadow-2xl border border-zinc-900 bg-zinc-950"
+                onError={(e) => (e.currentTarget.src = "https://via.placeholder.com/150?text=Error")}
               />
 
               {/* Next Arrow */}
@@ -289,36 +382,80 @@ export default function MediaGrid({ items, type, selectedItems, onToggle }: Prop
             </div>
 
             {/* Modal Bottom Suggested Row */}
-            <div className="w-full max-w-[1200px] mx-auto z-10" onClick={(e) => e.stopPropagation()}>
+            <div className="w-full max-w-[1200px] mx-auto z-10 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
               <p className="text-zinc-400 text-xs font-semibold mb-2">Suggested Images</p>
               <div className="flex space-x-3 overflow-x-auto no-scrollbar pb-2">
-                {items.map((item, idx) => {
+                {grouped.map((gItem, idx) => {
                   const isCurrent = idx === previewIndex;
                   return (
                     <img
-                      key={idx}
-                      src={item}
+                      key={gItem.id}
+                      src={gItem.defaultUrl}
                       alt={`Thumb ${idx}`}
                       onClick={() => setPreviewIndex(idx)}
                       className={`w-20 h-14 object-cover rounded-lg cursor-pointer border-2 transition-all flex-shrink-0 ${
                         isCurrent ? "border-blue-500 scale-105" : "border-zinc-850 hover:border-zinc-700"
                       }`}
+                      onError={(e) => (e.currentTarget.src = "https://via.placeholder.com/150?text=Error")}
                     />
                   );
                 })}
               </div>
             </div>
-          </div>
+          </div>,
+          document.body
         )}
       </>
     );
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-      {items.map((item, index) => {
-        const isSelected = selectedItems.includes(item);
-        const siteName = getSiteName(item);
+    <>
+      {availableSites.length > 1 && (
+        <div className="w-full flex flex-wrap items-center gap-2 mb-6 p-2 bg-zinc-900/10 rounded-xl border border-zinc-800/80 backdrop-blur-md">
+          <span className="text-xs text-zinc-500 font-semibold px-2">Filter Source:</span>
+          <button
+            onClick={() => setSelectedSitesFilter([])}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+              selectedSitesFilter.length === 0
+                ? "bg-blue-600 text-white shadow-md shadow-blue-500/20"
+                : "bg-zinc-900/50 text-zinc-400 hover:text-white hover:bg-zinc-800"
+            }`}
+          >
+            All ({items.length})
+          </button>
+          {availableSites.map(site => {
+            const isActive = selectedSitesFilter.includes(site);
+            const count = items.filter(item => getSiteName(item) === site).length;
+            return (
+              <button
+                key={site}
+                onClick={() => {
+                  setSelectedSitesFilter(prev => 
+                    prev.includes(site)
+                      ? prev.filter(s => s !== site)
+                      : [...prev, site]
+                  );
+                }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  isActive
+                    ? "bg-blue-600/20 text-blue-400 border border-blue-500/30"
+                    : "bg-zinc-900/50 text-zinc-400 hover:text-white hover:bg-zinc-850 border border-transparent"
+                }`}
+              >
+                <span>{site}</span>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                  isActive ? "bg-blue-500/20 text-blue-300" : "bg-zinc-950/80 text-zinc-500"
+                }`}>{count}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {filteredItems.map((item, index) => {
+          const isSelected = selectedItems.includes(item);
+          const siteName = getSiteName(item);
 
         return (
           <div
@@ -382,6 +519,17 @@ export default function MediaGrid({ items, type, selectedItems, onToggle }: Prop
 
             {/* Video hover button overlay */}
             <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center gap-4">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDownloadSingle(item);
+                }}
+                className="w-12 h-12 rounded-full bg-green-600 hover:bg-green-500 text-white flex items-center justify-center transition-all hover:scale-110 active:scale-95 shadow-lg cursor-pointer"
+                title="Download Video"
+              >
+                <Download className="w-5 h-5" />
+              </button>
+
               <a
                 href={item}
                 target="_blank"
@@ -396,5 +544,6 @@ export default function MediaGrid({ items, type, selectedItems, onToggle }: Prop
         );
       })}
     </div>
+    </>
   );
 }

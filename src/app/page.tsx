@@ -5,12 +5,13 @@ import ScraperInput from "@/components/ScraperInput";
 import ResultsTabs from "@/components/ResultsTabs";
 import MediaSkeleton from "@/components/MediaSkeleton";
 import SearchControls from "@/components/SearchControls";
+import FloatingDownload from "@/components/FloatingDownload";
 import { STOCK_SITES, SearchCategory } from "@/config/stockSites";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { toggleItemSelection, clearSelection } from "@/store/slice/scraperSlice";
 import { useScrapeUrlMutation } from "@/store/api/Scraper/Scraper.api";
 import { ScrapedData } from "@/store/api/Scraper/Scraper.type";
-import { Home as HomeIcon, ChevronLeft, ChevronRight } from "lucide-react";
+import { Home as HomeIcon, ChevronLeft, ChevronRight, AlertCircle, X } from "lucide-react";
 
 const isUrl = (str: string) => {
   try {
@@ -99,6 +100,9 @@ export default function Home() {
     await executeScrape(urlOrKeyword, 1);
   };
 
+  const [showErrorToast, setShowErrorToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState("");
+
   const handlePageChange = async (newPage: number) => {
     if (!lastQuery) return;
     setCurrentPage(newPage);
@@ -110,10 +114,12 @@ export default function Home() {
     setIsLocalLoading(true);
     setMergedData(null);
     setLocalError(null);
+    setShowErrorToast(false);
+    setToastMessage("");
+
+    let urls: string[] = [];
 
     try {
-      let urls: string[] = [];
-
       if (isUrl(urlOrKeyword)) {
         urls = [urlOrKeyword];
       } else {
@@ -129,63 +135,83 @@ export default function Home() {
           .filter(Boolean);
       }
 
-      // Scraping all endpoints in parallel with page parameters
-      const results = await Promise.all(
-        urls.map((url) => scrapeUrl({ url, page, limit: 20 }).unwrap())
-      );
-
-      // Merge and deduplicate results
-      const combined: ScrapedData = {
+      let completedCount = 0;
+      let failedCount = 0;
+      
+      const currentCombined: ScrapedData = {
         images: [],
         videos: [],
         links: [],
         h1s: [],
       };
+      
+      let currentTotalImages = 0;
+      let currentTotalVideos = 0;
+      let currentTotalLinks = 0;
 
       const linkHrefs = new Set<string>();
-      let totalImages = 0;
-      let totalVideos = 0;
-      let totalLinks = 0;
 
-      for (const res of results) {
-        if (res.data.images) combined.images.push(...res.data.images);
-        if (res.data.videos) combined.videos.push(...res.data.videos);
-        if (res.data.h1s) combined.h1s.push(...res.data.h1s);
-        if (res.data.links) {
-          for (const link of res.data.links) {
-            if (!linkHrefs.has(link.href)) {
-              linkHrefs.add(link.href);
-              combined.links.push(link);
+      const scrapePromises = urls.map(async (url) => {
+        try {
+          const res = await scrapeUrl({ url, page, limit: 20 }).unwrap();
+          
+          if (res.data.images) currentCombined.images.push(...res.data.images);
+          if (res.data.videos) currentCombined.videos.push(...res.data.videos);
+          if (res.data.h1s) currentCombined.h1s.push(...res.data.h1s);
+          if (res.data.links) {
+            for (const link of res.data.links) {
+              if (!linkHrefs.has(link.href)) {
+                linkHrefs.add(link.href);
+                currentCombined.links.push(link);
+              }
+            }
+          }
+
+          if (res.pagination) {
+            currentTotalImages += res.pagination.totalImages;
+            currentTotalVideos += res.pagination.totalVideos;
+            currentTotalLinks += res.pagination.totalLinks;
+          }
+
+          // Deduplicate arrays
+          const dedupedImages = Array.from(new Set(currentCombined.images));
+          const dedupedVideos = Array.from(new Set(currentCombined.videos));
+          const dedupedH1s = Array.from(new Set(currentCombined.h1s));
+
+          setMergedData({
+            images: dedupedImages,
+            videos: dedupedVideos,
+            links: [...currentCombined.links],
+            h1s: dedupedH1s,
+          });
+
+          const activeUrlsCount = urls.length || 1;
+          setTotalPagesImages(Math.ceil(currentTotalImages / (activeUrlsCount * 20)) || 1);
+          setTotalPagesVideos(Math.ceil(currentTotalVideos / (activeUrlsCount * 20)) || 1);
+          setTotalPagesLinks(Math.ceil(currentTotalLinks / (activeUrlsCount * 20)) || 1);
+
+        } catch (error: any) {
+          console.error(`Scrape failed for URL: ${url}`, error);
+          failedCount++;
+        } finally {
+          completedCount++;
+          if (completedCount === urls.length) {
+            setIsLocalLoading(false);
+            if (failedCount === urls.length) {
+              setToastMessage("All scraping queries failed. Please check your query or sites availability.");
+              setShowErrorToast(true);
             }
           }
         }
+      });
 
-        if (res.pagination) {
-          totalImages += res.pagination.totalImages;
-          totalVideos += res.pagination.totalVideos;
-          totalLinks += res.pagination.totalLinks;
-        }
-      }
-
-      // Deduplicate arrays
-      combined.images = Array.from(new Set(combined.images));
-      combined.videos = Array.from(new Set(combined.videos));
-      combined.h1s = Array.from(new Set(combined.h1s));
-
-      setMergedData(combined);
-
-      // Calculate total pages based on combined totals and urls count
-      const activeUrlsCount = urls.length || 1;
-      setTotalPagesImages(Math.ceil(totalImages / (activeUrlsCount * 20)) || 1);
-      setTotalPagesVideos(Math.ceil(totalVideos / (activeUrlsCount * 20)) || 1);
-      setTotalPagesLinks(Math.ceil(totalLinks / (activeUrlsCount * 20)) || 1);
+      await Promise.all(scrapePromises);
 
     } catch (error: any) {
       console.error("Scrape failed", error);
       const errMsg = error?.data?.message || error?.message || "Failed to fetch data. Make sure backend is running.";
-      setLocalError(errMsg);
-      alert(errMsg);
-    } finally {
+      setToastMessage(errMsg);
+      setShowErrorToast(true);
       setIsLocalLoading(false);
     }
   };
@@ -223,7 +249,7 @@ export default function Home() {
                 className="flex items-center space-x-2 cursor-pointer group flex-shrink-0"
               >
                 <span className="text-xl font-bold tracking-tight text-white group-hover:opacity-90 transition-opacity">
-                  Dynamic <span className="text-gradient">Scraper</span>
+                  Pixel <span className="text-gradient">Source</span>
                 </span>
               </div>
 
@@ -293,8 +319,20 @@ export default function Home() {
         ) : (
           /* Search Results Screen */
           <div className="w-full flex flex-col items-center">
+            {/* Progress indicator while loading background sources */}
+            {isLocalLoading && mergedData && (
+              <div className="w-full mb-6">
+                <div className="w-full h-1 bg-zinc-900 overflow-hidden relative rounded-full">
+                  <div className="h-full bg-blue-500 rounded-full animate-pulse w-full" />
+                </div>
+                <p className="text-xs text-zinc-500 font-semibold mt-2 text-center animate-pulse">
+                  Fetching results from remaining sources...
+                </p>
+              </div>
+            )}
+
             {/* Results Grid / Tabs */}
-            {mergedData && !isLocalLoading && (
+            {mergedData && (
               <div className="w-full animate-fade-in">
                 <ResultsTabs
                   data={mergedData}
@@ -308,8 +346,8 @@ export default function Home() {
               </div>
             )}
 
-            {/* Bento Skeleton Loader shown during loading state */}
-            {isLocalLoading && (
+            {/* Bento Skeleton Loader shown only at initial loading state */}
+            {isLocalLoading && !mergedData && (
               <div className="w-full animate-fade-in">
                 <MediaSkeleton />
               </div>
@@ -373,6 +411,30 @@ export default function Home() {
               </>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Floating Download Manager */}
+      <FloatingDownload
+        selectedItems={selectedItems}
+        onToggle={handleToggleItemSelection}
+        onClear={() => dispatch(clearSelection())}
+      />
+
+      {/* Floating Error Toast */}
+      {showErrorToast && (
+        <div className="fixed top-24 right-6 z-[1000] w-80 md:w-96 p-4 rounded-xl bg-zinc-950/95 border border-red-500/30 text-white shadow-2xl flex gap-3 animate-[slideLeft_0.3s_ease-out_forwards]">
+          <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <h4 className="text-sm font-bold">Scraping Alert</h4>
+            <p className="text-xs text-zinc-400 mt-1">{toastMessage}</p>
+          </div>
+          <button
+            onClick={() => setShowErrorToast(false)}
+            className="text-zinc-500 hover:text-zinc-300 self-start p-0.5 rounded-lg hover:bg-zinc-900 transition-all cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
     </div>
