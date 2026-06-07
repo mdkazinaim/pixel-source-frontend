@@ -79,6 +79,20 @@ const getSiteName = (url: string): string | null => {
   }
 };
 
+const getFileType = (url: string): string => {
+  try {
+    const parsed = new URL(url);
+    const pathname = parsed.hostname + parsed.pathname;
+    const extMatch = pathname.match(/\.([a-zA-Z0-9]+)(?:[\?\#]|$)/);
+    if (extMatch && extMatch[1]) {
+      const ext = extMatch[1].toLowerCase();
+      if (ext === "jpeg") return "JPG";
+      return ext.toUpperCase();
+    }
+  } catch {}
+  return "JPG";
+};
+
 const groupImages = (images: string[]): GroupedImage[] => {
   const groups: { [base: string]: ImageQuality[] } = {};
   
@@ -113,6 +127,7 @@ const groupImages = (images: string[]): GroupedImage[] => {
 
 export default function MediaGrid({ items, type, selectedItems, onToggle }: Props) {
   const [selectedQualities, setSelectedQualities] = useState<{ [baseId: string]: string }>({});
+  const [selectedFormats, setSelectedFormats] = useState<{ [baseId: string]: string }>({});
   
   // Preview Modal States
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
@@ -153,14 +168,98 @@ export default function MediaGrid({ items, type, selectedItems, onToggle }: Prop
     setPreviewIndex((prev) => (prev !== null && prev < length - 1 ? prev + 1 : 0));
   };
 
-  const handleDownloadSingle = (url: string) => {
-    const downloadUrl = `${config.API_BASE}/scraper/download-single?url=${encodeURIComponent(url)}`;
-    const a = document.createElement("a");
-    a.href = downloadUrl;
-    a.setAttribute("download", "");
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+  const handleDownloadSingle = async (url: string, targetFormat: string = "original") => {
+    let filename = "downloaded-media";
+    try {
+      const parsedUrl = new URL(url);
+      const pathname = parsedUrl.pathname;
+      const lastSegment = pathname.substring(pathname.lastIndexOf('/') + 1);
+      if (lastSegment && lastSegment.includes('.')) {
+        filename = lastSegment.split(/\#|\?/)[0];
+      } else {
+        filename = `media_${Date.now()}.${type === "video" ? "mp4" : "jpg"}`;
+      }
+    } catch {
+      filename = `media_${Date.now()}.${type === "video" ? "mp4" : "jpg"}`;
+    }
+
+    const isOriginalSvg = getFileType(url).toUpperCase() === "SVG";
+
+    if (type === "video" || targetFormat === "original" || (targetFormat === "svg" && isOriginalSvg)) {
+      const downloadUrl = `${config.API_BASE}/scraper/download-single?url=${encodeURIComponent(url)}`;
+      const a = document.createElement("a");
+      a.href = downloadUrl;
+      a.setAttribute("download", "");
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      return;
+    }
+
+    try {
+      const proxyUrl = `${config.API_BASE}/scraper/download-single?url=${encodeURIComponent(url)}`;
+      const response = await fetch(proxyUrl);
+      if (!response.ok) throw new Error("Network response was not ok");
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.src = blobUrl;
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+      });
+
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth || img.width;
+      canvas.height = img.naturalHeight || img.height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("Could not get canvas context");
+
+      if (targetFormat === "jpg") {
+        ctx.fillStyle = "#FFFFFF";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }
+      ctx.drawImage(img, 0, 0);
+      URL.revokeObjectURL(blobUrl);
+
+      let outputBlob: Blob | null = null;
+
+      if (targetFormat === "svg") {
+        const dataUrl = canvas.toDataURL("image/png");
+        const svgString = `<svg xmlns="http://www.w3.org/2000/svg" width="${img.naturalWidth || img.width}" height="${img.naturalHeight || img.height}">
+  <image width="${img.naturalWidth || img.width}" height="${img.naturalHeight || img.height}" href="${dataUrl}"/>
+</svg>`;
+        outputBlob = new Blob([svgString], { type: "image/svg+xml" });
+      } else {
+        const mimeType = targetFormat === "jpg" ? "image/jpeg" : `image/${targetFormat}`;
+        outputBlob = await new Promise<Blob | null>((resolve) => {
+          canvas.toBlob(resolve, mimeType, 0.95);
+        });
+      }
+
+      if (!outputBlob) throw new Error("Blob creation failed");
+
+      const outputUrl = URL.createObjectURL(outputBlob);
+      const a = document.createElement("a");
+      a.href = outputUrl;
+      const baseName = filename.includes(".") ? filename.substring(0, filename.lastIndexOf(".")) : filename;
+      a.download = `${baseName}.${targetFormat}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(outputUrl);
+    } catch (error) {
+      console.error("Format conversion failed, falling back to original", error);
+      const downloadUrl = `${config.API_BASE}/scraper/download-single?url=${encodeURIComponent(url)}`;
+      const a = document.createElement("a");
+      a.href = downloadUrl;
+      a.setAttribute("download", "");
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
   };
 
   if (type === "image") {
@@ -224,10 +323,25 @@ export default function MediaGrid({ items, type, selectedItems, onToggle }: Prop
                     : "border-zinc-800 hover:border-zinc-650"
                 }`}
               >
-                {/* Site badge */}
+                {/* Site badge with format select */}
                 {siteName && (
-                  <span className="absolute top-2.5 left-2.5 z-10 px-2 py-0.5 rounded bg-black/75 backdrop-blur-md border border-zinc-800 text-[10px] font-bold text-zinc-300">
-                    {siteName}
+                  <span 
+                    onClick={(e) => e.stopPropagation()}
+                    className="absolute top-2.5 left-2.5 z-20 flex items-center gap-1 px-2 py-0.5 rounded bg-black/75 backdrop-blur-md border border-zinc-800 text-[10px] font-bold text-zinc-300 shadow-md hover:bg-black/90 transition-all cursor-default"
+                  >
+                    <span>{siteName}</span>
+                    <span className="w-1 h-1 rounded-full bg-zinc-650" />
+                    <select
+                      value={selectedFormats[g.id] || "original"}
+                      onChange={(e) => setSelectedFormats(prev => ({ ...prev, [g.id]: e.target.value }))}
+                      className="bg-transparent border-none outline-none font-bold text-blue-400 cursor-pointer hover:text-blue-300 pr-1"
+                    >
+                      <option value="original" className="bg-zinc-950 text-zinc-300">Original ({getFileType(currentUrl)})</option>
+                      <option value="jpg" className="bg-zinc-950 text-zinc-300">JPG</option>
+                      <option value="png" className="bg-zinc-950 text-zinc-300">PNG</option>
+                      <option value="webp" className="bg-zinc-950 text-zinc-300">WEBP</option>
+                      <option value="svg" className="bg-zinc-950 text-zinc-300">SVG</option>
+                    </select>
                   </span>
                 )}
 
@@ -280,42 +394,44 @@ export default function MediaGrid({ items, type, selectedItems, onToggle }: Prop
                 )}
 
                 {/* Hover Actions Overlay */}
-                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center gap-4">
-                  {/* Preview (Eye) Button */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setPreviewIndex(index);
-                    }}
-                    className="w-12 h-12 rounded-full bg-blue-600 hover:bg-blue-500 text-white flex items-center justify-center transition-all hover:scale-110 active:scale-95 shadow-lg cursor-pointer"
-                    title="Preview Image"
-                  >
-                    <Eye className="w-5 h-5" />
-                  </button>
+                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center gap-3">
+                  <div className="flex items-center gap-3">
+                    {/* Preview (Eye) Button */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPreviewIndex(index);
+                      }}
+                      className="w-11 h-11 rounded-full bg-blue-600 hover:bg-blue-500 text-white flex items-center justify-center transition-all hover:scale-110 active:scale-95 shadow-lg cursor-pointer"
+                      title="Preview Image"
+                    >
+                      <Eye className="w-5 h-5" />
+                    </button>
 
-                  {/* Download Button */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDownloadSingle(currentUrl);
-                    }}
-                    className="w-12 h-12 rounded-full bg-green-600 hover:bg-green-500 text-white flex items-center justify-center transition-all hover:scale-110 active:scale-95 shadow-lg cursor-pointer"
-                    title="Download Image"
-                  >
-                    <Download className="w-5 h-5" />
-                  </button>
-                  
-                  {/* Details (ExternalLink) Button */}
-                  <a
-                    href={currentUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={(e) => e.stopPropagation()}
-                    className="w-12 h-12 rounded-full bg-zinc-900/90 hover:bg-zinc-800 text-white flex items-center justify-center transition-all hover:scale-110 active:scale-95 shadow-lg border border-zinc-850"
-                    title="View Original Details"
-                  >
-                    <ExternalLink className="w-5 h-5" />
-                  </a>
+                    {/* Download Button */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDownloadSingle(currentUrl, selectedFormats[g.id]);
+                      }}
+                      className="w-11 h-11 rounded-full bg-green-600 hover:bg-green-500 text-white flex items-center justify-center transition-all hover:scale-110 active:scale-95 shadow-lg cursor-pointer"
+                      title="Download Image"
+                    >
+                      <Download className="w-5 h-5" />
+                    </button>
+                    
+                    {/* Details (ExternalLink) Button */}
+                    <a
+                      href={currentUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-11 h-11 rounded-full bg-zinc-900/90 hover:bg-zinc-800 text-white flex items-center justify-center transition-all hover:scale-110 active:scale-95 shadow-lg border border-zinc-800 cursor-pointer"
+                      title="View Original Details"
+                    >
+                      <ExternalLink className="w-5 h-5" />
+                    </a>
+                  </div>
                 </div>
               </div>
             );
@@ -334,10 +450,32 @@ export default function MediaGrid({ items, type, selectedItems, onToggle }: Prop
                 Preview ({previewIndex + 1} of {grouped.length})
               </span>
               <div className="flex items-center gap-3">
+                {/* Format Dropdown in Modal */}
+                <div 
+                  onClick={(e) => e.stopPropagation()}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-zinc-900/80 rounded-xl border border-zinc-800 text-xs text-zinc-300 shadow-md"
+                >
+                  <span>Format:</span>
+                  <select
+                    value={selectedFormats[grouped[previewIndex].id] || "original"}
+                    onChange={(e) => {
+                      const id = grouped[previewIndex].id;
+                      setSelectedFormats(prev => ({ ...prev, [id]: e.target.value }));
+                    }}
+                    className="bg-transparent border-none outline-none font-bold text-blue-400 cursor-pointer"
+                  >
+                    <option value="original" className="bg-zinc-950">Original</option>
+                    <option value="jpg" className="bg-zinc-950">JPG</option>
+                    <option value="png" className="bg-zinc-950">PNG</option>
+                    <option value="webp" className="bg-zinc-950">WEBP</option>
+                    <option value="svg" className="bg-zinc-950">SVG</option>
+                  </select>
+                </div>
+
                 <button
                   onClick={() => {
                     const currentUrl = selectedQualities[grouped[previewIndex].id] || grouped[previewIndex].selectedUrl;
-                    handleDownloadSingle(currentUrl);
+                    handleDownloadSingle(currentUrl, selectedFormats[grouped[previewIndex].id]);
                   }}
                   className="px-4 py-2 rounded-xl bg-green-600 hover:bg-green-500 text-white flex items-center gap-2 font-semibold text-sm transition-all shadow-lg active:scale-95 cursor-pointer"
                   title="Download Image"
@@ -468,8 +606,10 @@ export default function MediaGrid({ items, type, selectedItems, onToggle }: Prop
           >
             {/* Site badge */}
             {siteName && (
-              <span className="absolute top-2.5 left-2.5 z-10 px-2 py-0.5 rounded bg-black/75 backdrop-blur-md border border-zinc-800 text-[10px] font-bold text-zinc-300">
-                {siteName}
+              <span className="absolute top-2.5 left-2.5 z-10 flex items-center gap-1 px-2 py-0.5 rounded bg-black/75 backdrop-blur-md border border-zinc-800 text-[10px] font-bold text-zinc-300">
+                <span>{siteName}</span>
+                <span className="w-1 h-1 rounded-full bg-zinc-650" />
+                <span className="text-blue-400">{getFileType(item)}</span>
               </span>
             )}
 
