@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { Eye, ExternalLink, Check, X, ChevronLeft, ChevronRight, Download } from "lucide-react";
+import { Eye, ExternalLink, Check, X, ChevronLeft, ChevronRight, Download, Shuffle } from "lucide-react";
 import { config } from "@/config";
 
 interface Props {
@@ -138,6 +138,15 @@ const generateFilename = (url: string, type: string): string => {
 };
 
 
+const shuffleArray = <T,>(array: T[]): T[] => {
+  const arr = [...array];
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+};
+
 export default function MediaGrid({ items, type, selectedItems, onToggle }: Props) {
   const [selectedQualities, setSelectedQualities] = useState<{ [baseId: string]: string }>({});
   const [selectedFormats, setSelectedFormats] = useState<{ [baseId: string]: string }>({});
@@ -145,6 +154,23 @@ export default function MediaGrid({ items, type, selectedItems, onToggle }: Prop
   // Preview Modal States
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [selectedSitesFilter, setSelectedSitesFilter] = useState<string[]>([]);
+
+  // Random Order States
+  const [randomImages, setRandomImages] = useState<GroupedImage[]>([]);
+  const [randomVideos, setRandomVideos] = useState<string[]>([]);
+  const [isRandom, setIsRandom] = useState(false);
+
+  // Keep track of previous items and filters to reset random order state during render if they change
+  const [prevItems, setPrevItems] = useState(items);
+  const [prevFilter, setPrevFilter] = useState(selectedSitesFilter);
+
+  if (items !== prevItems || selectedSitesFilter.join(",") !== prevFilter.join(",")) {
+    setPrevItems(items);
+    setPrevFilter(selectedSitesFilter);
+    setIsRandom(false);
+    setRandomImages([]);
+    setRandomVideos([]);
+  }
 
   if (items.length === 0) {
     return (
@@ -154,17 +180,38 @@ export default function MediaGrid({ items, type, selectedItems, onToggle }: Prop
     );
   }
 
-
   const availableSites = Array.from(new Set(items.map(item => getSiteName(item)))).filter(Boolean) as string[];
 
-  const filteredItems = selectedSitesFilter.length > 0
-    ? items.filter(item => {
-        const name = getSiteName(item);
-        return name && selectedSitesFilter.includes(name);
+  // 1. Group images from items (without duplicates)
+  const baseGrouped = type === "image" ? groupImages(items) : [];
+  const filteredGrouped = selectedSitesFilter.length > 0
+    ? baseGrouped.filter(g => {
+        const site = getSiteName(g.selectedUrl);
+        return site && selectedSitesFilter.includes(site);
       })
-    : items;
+    : baseGrouped;
 
-  const grouped = type === "image" ? groupImages(filteredItems) : [];
+  // 2. Deduplicate videos from items
+  const baseVideos = type === "video" ? Array.from(new Set(items)) : [];
+  const filteredVideos = selectedSitesFilter.length > 0
+    ? baseVideos.filter(url => {
+        const site = getSiteName(url);
+        return site && selectedSitesFilter.includes(site);
+      })
+    : baseVideos;
+
+  const handleRandomToggle = () => {
+    if (isRandom) {
+      setIsRandom(false);
+    } else {
+      setRandomImages(shuffleArray(filteredGrouped));
+      setRandomVideos(shuffleArray(filteredVideos));
+      setIsRandom(true);
+    }
+  };
+
+  const grouped = isRandom ? randomImages : filteredGrouped;
+  const filteredItems = isRandom ? randomVideos : filteredVideos;
 
   // Handle preview index bounds
   const handlePrev = (e?: React.MouseEvent) => {
@@ -268,44 +315,64 @@ export default function MediaGrid({ items, type, selectedItems, onToggle }: Prop
     return (
       <>
         {availableSites.length > 1 && (
-          <div className="w-full flex flex-wrap items-center gap-2 mb-6 p-2 bg-zinc-900/10 rounded-xl border border-zinc-800/80 backdrop-blur-md">
-            <span className="text-xs text-zinc-500 font-semibold px-2">Filter Source:</span>
-            <button
-              onClick={() => setSelectedSitesFilter([])}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                selectedSitesFilter.length === 0
-                  ? "bg-blue-600 text-white shadow-md shadow-blue-500/20"
-                  : "bg-zinc-900/50 text-zinc-400 hover:text-white hover:bg-zinc-800"
-              }`}
-            >
-              All ({items.length})
-            </button>
-            {availableSites.map(site => {
-              const isActive = selectedSitesFilter.includes(site);
-              const count = items.filter(item => getSiteName(item) === site).length;
-              return (
-                <button
-                  key={site}
-                  onClick={() => {
-                    setSelectedSitesFilter(prev => 
-                      prev.includes(site)
-                        ? prev.filter(s => s !== site)
-                        : [...prev, site]
-                    );
-                  }}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
-                    isActive
-                      ? "bg-blue-600/20 text-blue-400 border border-blue-500/30"
-                      : "bg-zinc-900/50 text-zinc-400 hover:text-white hover:bg-zinc-850 border border-transparent"
-                  }`}
-                >
-                  <span>{site}</span>
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
-                    isActive ? "bg-blue-500/20 text-blue-300" : "bg-zinc-950/80 text-zinc-500"
-                  }`}>{count}</span>
-                </button>
-              );
-            })}
+          <div className="sticky top-[128px] z-30 w-full flex items-center justify-between gap-3 mb-6 p-2 bg-black/90 rounded-xl border border-zinc-800/80 backdrop-blur-md overflow-hidden shadow-lg shadow-black/40">
+            <span className="text-xs text-zinc-500 font-semibold px-2 flex-shrink-0">Filter Source:</span>
+            
+            {/* Scrollable list */}
+            <div className="flex-1 flex items-center gap-2 overflow-x-auto scrollbar-none py-1">
+              <button
+                onClick={() => setSelectedSitesFilter([])}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex-shrink-0 ${
+                  selectedSitesFilter.length === 0
+                    ? "bg-blue-600 text-white shadow-md shadow-blue-500/20"
+                    : "bg-zinc-900/50 text-zinc-400 hover:text-white hover:bg-zinc-800"
+                }`}
+              >
+                All ({items.length})
+              </button>
+              {availableSites.map(site => {
+                const isActive = selectedSitesFilter.includes(site);
+                const count = items.filter(item => getSiteName(item) === site).length;
+                return (
+                  <button
+                    key={site}
+                    onClick={() => {
+                      setSelectedSitesFilter(prev => 
+                        prev.includes(site)
+                          ? prev.filter(s => s !== site)
+                          : [...prev, site]
+                      );
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 flex-shrink-0 ${
+                      isActive
+                        ? "bg-blue-600/20 text-blue-400 border border-blue-500/30"
+                        : "bg-zinc-900/50 text-zinc-400 hover:text-white hover:bg-zinc-850 border border-transparent"
+                    }`}
+                  >
+                    <span>{site}</span>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                      isActive ? "bg-blue-500/20 text-blue-300" : "bg-zinc-950/80 text-zinc-500"
+                    }`}>{count}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Random Button */}
+            <div className="flex-shrink-0 border-l border-zinc-800/80 pl-3">
+              <button
+                onClick={handleRandomToggle}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  isRandom
+                    ? "bg-purple-600 text-white shadow-md shadow-purple-500/20 border border-purple-500/30"
+                    : "bg-zinc-900/50 text-zinc-400 hover:text-white hover:bg-zinc-800 border border-transparent"
+                }`}
+                title="Show in random order"
+              >
+                <Shuffle className="w-3.5 h-3.5" />
+                <span>Random</span>
+              </button>
+            </div>
           </div>
         )}
         <div className="columns-1 md:columns-3 gap-4 space-y-4">
@@ -551,44 +618,64 @@ export default function MediaGrid({ items, type, selectedItems, onToggle }: Prop
   return (
     <>
       {availableSites.length > 1 && (
-        <div className="w-full flex flex-wrap items-center gap-2 mb-6 p-2 bg-zinc-900/10 rounded-xl border border-zinc-800/80 backdrop-blur-md">
-          <span className="text-xs text-zinc-500 font-semibold px-2">Filter Source:</span>
-          <button
-            onClick={() => setSelectedSitesFilter([])}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-              selectedSitesFilter.length === 0
-                ? "bg-blue-600 text-white shadow-md shadow-blue-500/20"
-                : "bg-zinc-900/50 text-zinc-400 hover:text-white hover:bg-zinc-800"
-            }`}
-          >
-            All ({items.length})
-          </button>
-          {availableSites.map(site => {
-            const isActive = selectedSitesFilter.includes(site);
-            const count = items.filter(item => getSiteName(item) === site).length;
-            return (
-              <button
-                key={site}
-                onClick={() => {
-                  setSelectedSitesFilter(prev => 
-                    prev.includes(site)
-                      ? prev.filter(s => s !== site)
-                      : [...prev, site]
-                  );
-                }}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
-                  isActive
-                    ? "bg-blue-600/20 text-blue-400 border border-blue-500/30"
-                    : "bg-zinc-900/50 text-zinc-400 hover:text-white hover:bg-zinc-850 border border-transparent"
-                }`}
-              >
-                <span>{site}</span>
-                <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
-                  isActive ? "bg-blue-500/20 text-blue-300" : "bg-zinc-950/80 text-zinc-500"
-                }`}>{count}</span>
-              </button>
-            );
-          })}
+        <div className="sticky top-[128px] z-30 w-full flex items-center justify-between gap-3 mb-6 p-2 bg-black/90 rounded-xl border border-zinc-800/80 backdrop-blur-md overflow-hidden shadow-lg shadow-black/40">
+          <span className="text-xs text-zinc-500 font-semibold px-2 flex-shrink-0">Filter Source:</span>
+          
+          {/* Scrollable list */}
+          <div className="flex-1 flex items-center gap-2 overflow-x-auto scrollbar-none py-1">
+            <button
+              onClick={() => setSelectedSitesFilter([])}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex-shrink-0 ${
+                selectedSitesFilter.length === 0
+                  ? "bg-blue-600 text-white shadow-md shadow-blue-500/20"
+                  : "bg-zinc-900/50 text-zinc-400 hover:text-white hover:bg-zinc-800"
+              }`}
+            >
+              All ({items.length})
+            </button>
+            {availableSites.map(site => {
+              const isActive = selectedSitesFilter.includes(site);
+              const count = items.filter(item => getSiteName(item) === site).length;
+              return (
+                <button
+                  key={site}
+                  onClick={() => {
+                    setSelectedSitesFilter(prev => 
+                      prev.includes(site)
+                        ? prev.filter(s => s !== site)
+                        : [...prev, site]
+                    );
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 flex-shrink-0 ${
+                    isActive
+                      ? "bg-blue-600/20 text-blue-400 border border-blue-500/30"
+                      : "bg-zinc-900/50 text-zinc-400 hover:text-white hover:bg-zinc-850 border border-transparent"
+                  }`}
+                >
+                  <span>{site}</span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                    isActive ? "bg-blue-500/20 text-blue-300" : "bg-zinc-950/80 text-zinc-500"
+                  }`}>{count}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Random Button */}
+          <div className="flex-shrink-0 border-l border-zinc-800/80 pl-3">
+            <button
+              onClick={handleRandomToggle}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                isRandom
+                  ? "bg-purple-600 text-white shadow-md shadow-purple-500/20 border border-purple-500/30"
+                  : "bg-zinc-900/50 text-zinc-400 hover:text-white hover:bg-zinc-800 border border-transparent"
+              }`}
+              title="Show in random order"
+            >
+              <Shuffle className="w-3.5 h-3.5" />
+              <span>Random</span>
+            </button>
+          </div>
         </div>
       )}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

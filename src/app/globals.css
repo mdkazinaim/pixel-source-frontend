@@ -104,3 +104,33 @@ body {
 .animate-shake {
   animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
 }
+
+@keyframes marqueeUp {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(-25%); }
+}
+
+@keyframes marqueeDown {
+  0% { transform: translateY(-25%); }
+  100% { transform: translateY(0); }
+}
+
+.animate-marquee-up {
+  display: flex;
+  flex-direction: column;
+  animation: marqueeUp linear infinite;
+}
+
+.animate-marquee-down {
+  display: flex;
+  flex-direction: column;
+  animation: marqueeDown linear infinite;
+}
+
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

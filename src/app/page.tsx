@@ -44,6 +44,119 @@ const getPageNumbers = (currentPage: number, totalPages: number) => {
   return pages;
 };
 
+const BACKGROUND_IMAGES = [
+  "/slider/abstract-blue-light-pipe-speed-zoom-black-background-technology_1142-9530.jpg",
+  "/slider/blue-background-7470781_640.jpg",
+  "/slider/grey-scale-shot-lake-surrounded-by-mountains-trees_181624-10608.jpg",
+  "/slider/image_1780825643174.jpg",
+  "/slider/media-0.jpg",
+  "/slider/media-1.jpg",
+  "/slider/media-2.jpg",
+  "/slider/media-3.jpg",
+  "/slider/media-4.jpg",
+  "/slider/media-5.jpg",
+  "/slider/media-6.jpg",
+  "/slider/media-7.jpg",
+  "/slider/media-8.jpg",
+  "/slider/media-9.jpg",
+  "/slider/media-10.jpg",
+  "/slider/media-11.jpg",
+  "/slider/media-12.jpg",
+  "/slider/media-13.jpg",
+  "/slider/media-14.jpeg",
+  "/slider/media-15.jpeg",
+  "/slider/media-16.jpg",
+  "/slider/media-17.jpg",
+  "/slider/media-18.jpg",
+  "/slider/media-19.jpg",
+  "/slider/media-20.jpg",
+  "/slider/media-21.jpg",
+  "/slider/media-22.jpg",
+  "/slider/media_1780826696521.jpg",
+  "/slider/sunlight-shining-single-mountain-top-sunset-with-dark-cloudy-sky_181624-377.jpg",
+  "/slider/winding-path-9840681_1280.jpg"
+];
+
+const Track = ({ 
+  images, 
+  speed, 
+  direction, 
+  aspects 
+}: { 
+  images: string[], 
+  speed: string, 
+  direction: "up" | "down",
+  aspects: string[]
+}) => {
+  const list = [...images, ...images, ...images, ...images];
+  const animClass = direction === "up" ? "animate-marquee-up" : "animate-marquee-down";
+  
+  return (
+    <div className="flex flex-col overflow-hidden h-full flex-1">
+      <div 
+        className={`flex flex-col space-y-4 ${animClass}`}
+        style={{ animationDuration: speed }}
+      >
+        {list.map((src, i) => {
+          const aspect = aspects[i % images.length];
+          return (
+            <div 
+              key={i} 
+              className={`w-full ${aspect} rounded-xl overflow-hidden shadow-lg border border-zinc-900/60 flex-shrink-0`}
+            >
+              <img 
+                src={src} 
+                alt="Background discovery" 
+                className="w-full h-full object-cover select-none pointer-events-none opacity-85" 
+                loading="lazy"
+              />
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+const MovingBackground = () => {
+  const group1 = BACKGROUND_IMAGES.slice(0, 4);
+  const group2 = BACKGROUND_IMAGES.slice(4, 8);
+  const group3 = BACKGROUND_IMAGES.slice(8, 12);
+  const group4 = BACKGROUND_IMAGES.slice(12, 16);
+  const group5 = BACKGROUND_IMAGES.slice(16, 20);
+  const group6 = BACKGROUND_IMAGES.slice(20, 24);
+  const group7 = BACKGROUND_IMAGES.slice(24, 28);
+  const group8 = BACKGROUND_IMAGES.slice(26, 30);
+
+  // Staggered sequences of aspect ratios for each column to build an organic masonry grid
+  const aspects1 = ["aspect-[4/3]", "aspect-[16/9]", "aspect-[1/1]", "aspect-[3/4]"];
+  const aspects2 = ["aspect-[3/4]", "aspect-[4/3]", "aspect-[16/9]", "aspect-[1/1]"];
+  const aspects3 = ["aspect-[1/1]", "aspect-[3/4]", "aspect-[4/3]", "aspect-[16/9]"];
+  const aspects4 = ["aspect-[16/9]", "aspect-[1/1]", "aspect-[3/4]", "aspect-[4/3]"];
+
+  return (
+    <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
+      <div 
+        className="absolute w-[150%] h-[180%] top-[-40%] left-[-25%] flex flex-row space-x-4 justify-center"
+        style={{
+          transform: "rotate(-10deg)",
+        }}
+      >
+        <Track images={group1} speed="45s" direction="up" aspects={aspects1} />
+        <Track images={group2} speed="55s" direction="down" aspects={aspects2} />
+        <Track images={group3} speed="40s" direction="up" aspects={aspects3} />
+        <Track images={group4} speed="60s" direction="down" aspects={aspects4} />
+        <Track images={group5} speed="50s" direction="up" aspects={aspects1} />
+        <Track images={group6} speed="48s" direction="down" aspects={aspects2} />
+        <Track images={group7} speed="52s" direction="up" aspects={aspects3} />
+        <Track images={group8} speed="46s" direction="down" aspects={aspects4} />
+      </div>
+      {/* Premium Dark Gradient Overlay */}
+      <div className="absolute inset-0 bg-gradient-to-b from-black/65 via-black/55 to-black/75 backdrop-blur-[3px] z-10" />
+    </div>
+  );
+};
+
 export default function Home() {
   const dispatch = useAppDispatch();
   const { selectedItems } = useAppSelector((state) => state.scraper);
@@ -185,9 +298,12 @@ export default function Home() {
 
       const linkHrefs = new Set<string>();
 
+      const activeUrlsCount = urls.length || 1;
+      const limitPerSite = Math.max(1, Math.round(12 / activeUrlsCount));
+
       const scrapePromises = urls.map(async (url) => {
         try {
-          const promise = scrapeUrl({ url, page, limit: 20 });
+          const promise = scrapeUrl({ url, page, limit: limitPerSite });
           activePromisesRef.current.push(promise);
           const res = await promise.unwrap();
           
@@ -223,10 +339,9 @@ export default function Home() {
             h1s: dedupedH1s,
           });
 
-          const activeUrlsCount = urls.length || 1;
-          setTotalPagesImages(Math.ceil(currentTotalImages / (activeUrlsCount * 20)) || 1);
-          setTotalPagesVideos(Math.ceil(currentTotalVideos / (activeUrlsCount * 20)) || 1);
-          setTotalPagesLinks(Math.ceil(currentTotalLinks / (activeUrlsCount * 20)) || 1);
+          setTotalPagesImages(Math.ceil(currentTotalImages / (activeUrlsCount * limitPerSite)) || 1);
+          setTotalPagesVideos(Math.ceil(currentTotalVideos / (activeUrlsCount * limitPerSite)) || 1);
+          setTotalPagesLinks(Math.ceil(currentTotalLinks / (activeUrlsCount * limitPerSite)) || 1);
 
         } catch (error: any) {
           if (isCancelledRef.current) return;
@@ -278,7 +393,8 @@ export default function Home() {
   if (activeTab === "links") activeTotalPages = totalPagesLinks;
 
   return (
-    <div className="min-h-screen flex flex-col w-full bg-black text-white pb-28">
+    <div className="relative min-h-screen flex flex-col w-full bg-black text-white pb-28">
+      {!hasSearched && <MovingBackground />}
       {/* Sticky Header Block (contains Navbar and SearchControls) */}
       {hasSearched && (
         <div className="sticky top-0 z-50 w-full bg-black/90 backdrop-blur-md border-b border-zinc-800/80 animate-slide-down flex flex-col">
@@ -333,7 +449,7 @@ export default function Home() {
       )}
 
       {/* Content Area - scrolls normally beneath the sticky header wrapper */}
-      <main className="flex-1 w-full max-w-[1600px] mx-auto px-8 py-8 flex flex-col items-center">
+      <main className="relative z-20 flex-1 w-full max-w-[1600px] mx-auto px-8 py-8 flex flex-col items-center">
         {!hasSearched ? (
           /* Initial Hero Landing Screen */
           <div className="w-full flex flex-col items-center justify-center flex-1 py-12">
