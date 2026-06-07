@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import ScraperInput from "@/components/ScraperInput";
 import ResultsTabs from "@/components/ResultsTabs";
 import MediaSkeleton from "@/components/MediaSkeleton";
@@ -14,12 +14,11 @@ import { ScrapedData } from "@/store/api/Scraper/Scraper.type";
 import { Home as HomeIcon, ChevronLeft, ChevronRight, AlertCircle, X } from "lucide-react";
 
 const isUrl = (str: string) => {
-  try {
-    const url = new URL(str);
-    return url.protocol === "http:" || url.protocol === "https:";
-  } catch {
-    return false;
-  }
+  const trimmed = str.trim();
+  if (!trimmed) return false;
+  if (/^https?:\/\//i.test(trimmed)) return true;
+  if (/^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?:\/|$)/.test(trimmed) && !/\s/.test(trimmed)) return true;
+  return false;
 };
 
 const getPageNumbers = (currentPage: number, totalPages: number) => {
@@ -57,10 +56,39 @@ export default function Home() {
 
   // States for search categories and stock site filters
   const [selectedCategory, setSelectedCategory] = useState<SearchCategory>("images");
-  const [selectedSites, setSelectedSites] = useState<string[]>(["unsplash", "freepik"]);
+  const [selectedSites, setSelectedSites] = useState<string[]>(["unsplash", "magnific"]);
+
+  const hasSitesSelected = selectedSites.some((id) =>
+    STOCK_SITES.some((site) => site.id === id && site.categories.includes(selectedCategory))
+  );
 
   // Active tab view selection state
   const [activeTab, setActiveTab] = useState<"images" | "videos" | "links">("images");
+
+  // Refs for request cancellation
+  const activePromisesRef = useRef<any[]>([]);
+  const isCancelledRef = useRef(false);
+
+  const [shouldShakeSites, setShouldShakeSites] = useState(false);
+
+  const triggerShakeSites = () => {
+    setShouldShakeSites(true);
+    setTimeout(() => {
+      setShouldShakeSites(false);
+    }, 500);
+  };
+
+  const handleCancel = () => {
+    isCancelledRef.current = true;
+    setIsLocalLoading(false);
+    activePromisesRef.current.forEach((promise) => {
+      if (promise && typeof promise.abort === "function") {
+        promise.abort();
+      }
+    });
+    activePromisesRef.current = [];
+    resetScrape();
+  };
 
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
@@ -116,12 +144,18 @@ export default function Home() {
     setLocalError(null);
     setShowErrorToast(false);
     setToastMessage("");
+    isCancelledRef.current = false;
+    activePromisesRef.current = [];
 
     let urls: string[] = [];
 
     try {
       if (isUrl(urlOrKeyword)) {
-        urls = [urlOrKeyword];
+        let targetUrl = urlOrKeyword.trim();
+        if (!/^https?:\/\//i.test(targetUrl)) {
+          targetUrl = `https://${targetUrl}`;
+        }
+        urls = [targetUrl];
       } else {
         const term = encodeURIComponent(urlOrKeyword.trim());
         if (selectedSites.length === 0) {
@@ -153,8 +187,12 @@ export default function Home() {
 
       const scrapePromises = urls.map(async (url) => {
         try {
-          const res = await scrapeUrl({ url, page, limit: 20 }).unwrap();
+          const promise = scrapeUrl({ url, page, limit: 20 });
+          activePromisesRef.current.push(promise);
+          const res = await promise.unwrap();
           
+          if (isCancelledRef.current) return;
+
           if (res.data.images) currentCombined.images.push(...res.data.images);
           if (res.data.videos) currentCombined.videos.push(...res.data.videos);
           if (res.data.h1s) currentCombined.h1s.push(...res.data.h1s);
@@ -191,9 +229,11 @@ export default function Home() {
           setTotalPagesLinks(Math.ceil(currentTotalLinks / (activeUrlsCount * 20)) || 1);
 
         } catch (error: any) {
+          if (isCancelledRef.current) return;
           console.error(`Scrape failed for URL: ${url}`, error);
           failedCount++;
         } finally {
+          if (isCancelledRef.current) return;
           completedCount++;
           if (completedCount === urls.length) {
             setIsLocalLoading(false);
@@ -208,6 +248,7 @@ export default function Home() {
       await Promise.all(scrapePromises);
 
     } catch (error: any) {
+      if (isCancelledRef.current) return;
       console.error("Scrape failed", error);
       const errMsg = error?.data?.message || error?.message || "Failed to fetch data. Make sure backend is running.";
       setToastMessage(errMsg);
@@ -257,9 +298,13 @@ export default function Home() {
               <div className="flex-1 max-w-xl">
                 <ScraperInput 
                   onScrape={handleScrape} 
+                  onCancel={handleCancel}
+                  onTriggerShake={triggerShakeSites}
                   loading={isLocalLoading} 
                   selectedCategory={selectedCategory}
                   onSelectCategory={handleSelectCategory}
+                  hasSitesSelected={hasSitesSelected}
+                  defaultValue={lastQuery || ""}
                   compact={true}
                 />
               </div>
@@ -277,7 +322,7 @@ export default function Home() {
           </header>
 
           {/* Site Selector Controls Row - Pinned directly under Search bar */}
-          <div className="w-full max-w-[1600px] mx-auto px-8 pb-4">
+          <div className={`w-full max-w-[1600px] mx-auto px-8 pb-4 transition-transform duration-75 ${shouldShakeSites ? "animate-shake" : ""}`}>
             <SearchControls
               selectedCategory={selectedCategory}
               selectedSites={selectedSites}
@@ -294,7 +339,7 @@ export default function Home() {
           <div className="w-full flex flex-col items-center justify-center flex-1 py-12">
             <div className="w-full text-center mb-12 animate-fade-in">
               <h1 className="text-6xl font-bold mb-4 tracking-tight">
-                Dynamic <span className="text-gradient">Scraper</span>
+                Pixel <span className="text-gradient">Source</span>
               </h1>
               <p className="text-gray-400 text-lg max-w-2xl mx-auto">
                 Extract images, videos, links, and content from any URL with precision.
@@ -305,15 +350,21 @@ export default function Home() {
             <div className="w-full max-w-4xl animate-fade-in space-y-5">
               <ScraperInput 
                 onScrape={handleScrape} 
+                onCancel={handleCancel}
+                onTriggerShake={triggerShakeSites}
                 loading={isLocalLoading} 
                 selectedCategory={selectedCategory}
                 onSelectCategory={handleSelectCategory}
+                hasSitesSelected={hasSitesSelected}
+                defaultValue={lastQuery || ""}
               />
-              <SearchControls
-                selectedCategory={selectedCategory}
-                selectedSites={selectedSites}
-                onSelectSites={setSelectedSites}
-              />
+              <div className={`transition-transform duration-75 ${shouldShakeSites ? "animate-shake" : ""}`}>
+                <SearchControls
+                  selectedCategory={selectedCategory}
+                  selectedSites={selectedSites}
+                  onSelectSites={setSelectedSites}
+                />
+              </div>
             </div>
           </div>
         ) : (

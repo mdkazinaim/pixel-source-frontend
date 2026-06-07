@@ -6,8 +6,11 @@ import { StoreProvider } from "@/store/provider";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Dynamic Scraper | Extract Media Effortlessly",
+  title: "Pixel Source | Extract Media Effortlessly",
   description: "A premium web scraper to extract images, videos, links, and text from any website.",
+  icons: {
+    icon: "/crown.png",
+  },
 };
 
 export default function RootLayout({

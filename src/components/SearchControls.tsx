@@ -54,28 +54,28 @@ export default function SearchControls({
   };
 
   return (
-    <div className="w-full flex items-center space-x-2 bg-zinc-950/40 p-2 rounded-2xl border border-zinc-800/50 shadow-inner">
+    <div className="w-full flex items-center space-x-2">
       {/* Select All Button */}
-      <button
-        type="button"
-        onClick={handleSelectAll}
-        className={`flex items-center space-x-1.5 px-4 py-2.5 rounded-xl border text-xs font-bold transition-all flex-shrink-0 active:scale-[0.98] ${
-          areAllSelected
-            ? "bg-blue-600/10 border-blue-500/50 text-blue-400"
-            : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white"
-        }`}
-      >
-        {areAllSelected ? <CheckSquare className="w-3.5 h-3.5 text-blue-400" /> : <Square className="w-3.5 h-3.5 text-zinc-500" />}
-        <span>All</span>
-      </button>
 
       {/* Left Navigation Arrow */}
       <button
         type="button"
         onClick={() => scroll("left")}
-        className="p-2.5 rounded-xl border border-zinc-800 bg-zinc-900 hover:bg-zinc-850 text-zinc-400 hover:text-white transition-all flex-shrink-0 active:scale-95"
-      >
+        className="p-2.5 rounded-lg border border-zinc-800 bg-zinc-900 hover:bg-zinc-850 text-zinc-400 hover:text-white transition-all flex-shrink-0 active:scale-95"
+        >
         <ChevronLeft className="w-4 h-4" />
+      </button>
+      <button
+        type="button"
+        onClick={handleSelectAll}
+        className={`flex items-center space-x-1.5 px-4 py-2.5 rounded-lg border text-xs font-bold transition-all flex-shrink-0 active:scale-[0.98] ${
+          areAllSelected
+            ? "bg-blue-600/10 border-blue-500/50 text-blue-400"
+            : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white"
+        }`}
+      >
+      <span>All</span>
+        {areAllSelected ? <CheckSquare className="w-3.5 h-3.5 text-blue-400" /> : <Square className="w-3.5 h-3.5 text-zinc-500" />}
       </button>
 
       {/* Scrollable list of sites */}
@@ -90,7 +90,7 @@ export default function SearchControls({
               key={site.id}
               type="button"
               onClick={() => handleToggleSite(site.id)}
-              className={`flex items-center space-x-2.5 px-4.5 py-2.5 rounded-xl border text-xs font-semibold transition-all flex-shrink-0 active:scale-[0.98] ${
+              className={`flex items-center space-x-2.5 px-4.5 py-2.5 rounded-lg border text-xs font-semibold transition-all flex-shrink-0 active:scale-[0.98] ${
                 isSelected
                   ? "bg-zinc-800 border-blue-500/80 text-blue-400 shadow-md shadow-blue-500/5"
                   : "bg-zinc-900/40 border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-zinc-300"
@@ -112,7 +112,7 @@ export default function SearchControls({
       <button
         type="button"
         onClick={() => scroll("right")}
-        className="p-2.5 rounded-xl border border-zinc-800 bg-zinc-900 hover:bg-zinc-850 text-zinc-400 hover:text-white transition-all flex-shrink-0 active:scale-95"
+        className="p-2.5 rounded-lg border border-zinc-800 bg-zinc-900 hover:bg-zinc-850 text-zinc-400 hover:text-white transition-all flex-shrink-0 active:scale-95"
       >
         <ChevronRight className="w-4 h-4" />
       </button>

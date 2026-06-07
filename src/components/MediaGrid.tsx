@@ -125,6 +125,19 @@ const groupImages = (images: string[]): GroupedImage[] => {
   });
 };
 
+const generateFilename = (url: string, type: string): string => {
+  try {
+    const parsedUrl = new URL(url);
+    const pathname = parsedUrl.pathname;
+    const lastSegment = pathname.substring(pathname.lastIndexOf('/') + 1);
+    if (lastSegment && lastSegment.includes('.')) {
+      return lastSegment.split(/\#|\?/)[0];
+    }
+  } catch {}
+  return `media_${Date.now()}.${type === "video" ? "mp4" : "jpg"}`;
+};
+
+
 export default function MediaGrid({ items, type, selectedItems, onToggle }: Props) {
   const [selectedQualities, setSelectedQualities] = useState<{ [baseId: string]: string }>({});
   const [selectedFormats, setSelectedFormats] = useState<{ [baseId: string]: string }>({});
@@ -169,19 +182,7 @@ export default function MediaGrid({ items, type, selectedItems, onToggle }: Prop
   };
 
   const handleDownloadSingle = async (url: string, targetFormat: string = "original") => {
-    let filename = "downloaded-media";
-    try {
-      const parsedUrl = new URL(url);
-      const pathname = parsedUrl.pathname;
-      const lastSegment = pathname.substring(pathname.lastIndexOf('/') + 1);
-      if (lastSegment && lastSegment.includes('.')) {
-        filename = lastSegment.split(/\#|\?/)[0];
-      } else {
-        filename = `media_${Date.now()}.${type === "video" ? "mp4" : "jpg"}`;
-      }
-    } catch {
-      filename = `media_${Date.now()}.${type === "video" ? "mp4" : "jpg"}`;
-    }
+    const filename = generateFilename(url, type);
 
     const isOriginalSvg = getFileType(url).toUpperCase() === "SVG";
 
