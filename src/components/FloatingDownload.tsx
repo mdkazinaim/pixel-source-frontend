@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Download, X, Trash2, Loader2, Check, AlertCircle } from "lucide-react";
 import { config } from "@/config";
 
@@ -14,11 +14,9 @@ export default function FloatingDownload({ selectedItems, onToggle, onClear }: P
   const [progress, setProgress] = useState(0);
 
   // Auto-close drawer if selection becomes empty
-  useEffect(() => {
-    if (selectedItems.length === 0) {
-      setIsOpen(false);
-    }
-  }, [selectedItems.length]);
+  if (selectedItems.length === 0 && isOpen) {
+    setIsOpen(false);
+  }
 
   const handleDownload = async () => {
     if (selectedItems.length === 0) return;
